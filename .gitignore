@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+vector_db/
+.claude/scheduled_tasks.lock
