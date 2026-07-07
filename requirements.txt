@@ -1,0 +1,8 @@
+anthropic>=0.69.0
+sentence-transformers>=3.0.0
+numpy>=1.26.0
+ollama>=0.6.0
+rank-bm25>=0.2.2
+faiss-cpu>=1.8.0
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
