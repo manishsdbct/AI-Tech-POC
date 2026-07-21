@@ -1,0 +1,14 @@
+fastapi>=0.111
+uvicorn[standard]>=0.30
+pydantic>=2.7
+pydantic-settings>=2.3
+redis>=5.0
+prometheus-client>=0.20
+openai>=1.30
+anthropic>=0.28
+asyncpg>=0.29
+
+# Optional: enables accurate pre-call token estimation in token_counter.py.
+# Lazily imported with a heuristic fallback, so it's safe to omit (e.g. in
+# offline/sandboxed environments where its BPE rank file can't be fetched).
+# tiktoken>=0.7

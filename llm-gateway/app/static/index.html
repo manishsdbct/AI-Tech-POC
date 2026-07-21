@@ -1,0 +1,392 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>LLM Gateway — Console</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #0b0d12;
+    --panel: #12151c;
+    --border: #262b36;
+    --text: #e6e9ef;
+    --muted: #8b93a3;
+    --accent: #5b8cff;
+    --accent-text: #0b0d12;
+    --ok: #4caf7d;
+    --err: #e5675f;
+    --mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f5f6f8;
+      --panel: #ffffff;
+      --border: #dde1e8;
+      --text: #1b1e24;
+      --muted: #5c6472;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    min-height: 100vh;
+  }
+  header {
+    padding: 24px 32px 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  header h1 {
+    font-size: 18px;
+    margin: 0 0 4px;
+    font-weight: 600;
+  }
+  header p {
+    margin: 0 0 16px;
+    color: var(--muted);
+    font-size: 13px;
+  }
+  main {
+    display: grid;
+    grid-template-columns: minmax(320px, 480px) 1fr;
+    gap: 24px;
+    padding: 24px 32px 48px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+  @media (max-width: 860px) {
+    main { grid-template-columns: 1fr; }
+  }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+  }
+  .field {
+    margin-bottom: 16px;
+  }
+  .field label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 6px;
+  }
+  .row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  select, input[type="text"], textarea {
+    width: 100%;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 14px;
+    font-family: inherit;
+  }
+  textarea {
+    resize: vertical;
+    min-height: 70px;
+    font-family: var(--mono);
+    font-size: 13px;
+  }
+  #user-prompt { min-height: 120px; }
+  .checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .checkbox-row label {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text);
+    text-transform: none;
+    letter-spacing: normal;
+  }
+  .hint {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 4px;
+  }
+  button#send {
+    width: 100%;
+    background: var(--accent);
+    color: var(--accent-text);
+    border: none;
+    border-radius: 6px;
+    padding: 11px 16px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button#send:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+  button#send:hover:not(:disabled) { filter: brightness(1.08); }
+
+  .result-panel { display: flex; flex-direction: column; gap: 16px; }
+  .empty-state {
+    color: var(--muted);
+    font-size: 13px;
+    padding: 40px 0;
+    text-align: center;
+  }
+  .status-line {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+  }
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+  }
+  .badge.ok { background: rgba(76,175,125,0.15); color: var(--ok); }
+  .badge.err { background: rgba(229,103,95,0.15); color: var(--err); }
+  .content-box {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px;
+    white-space: pre-wrap;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+    gap: 10px;
+  }
+  .stat {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+  }
+  .stat .k {
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .stat .v {
+    font-size: 16px;
+    font-weight: 600;
+    margin-top: 2px;
+    font-family: var(--mono);
+  }
+  details summary {
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  pre.raw {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    font-size: 12px;
+    overflow-x: auto;
+    margin-top: 8px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>LLM Gateway</h1>
+  <p>Send a completion request through the gateway (auth → rate limit → cache → routing → cost tracking).</p>
+</header>
+
+<main>
+  <form id="form" class="panel">
+    <div class="field">
+      <label for="service-key">Service key</label>
+      <select id="service-key-select">
+        <option value="svc-search-key">svc-search-key (team: platform)</option>
+        <option value="svc-support-key">svc-support-key (team: cx, max tier: standard)</option>
+        <option value="svc-reco-key">svc-reco-key (team: growth, max tier: cheap)</option>
+        <option value="__custom__">Custom…</option>
+      </select>
+      <input type="text" id="service-key-custom" placeholder="svc-your-key" style="margin-top:8px; display:none;" />
+    </div>
+
+    <div class="row">
+      <div class="field">
+        <label for="model-tier">Model tier</label>
+        <select id="model-tier">
+          <option value="">— none —</option>
+          <option value="cheap">cheap</option>
+          <option value="standard" selected>standard</option>
+          <option value="premium">premium</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="model">Explicit model (optional)</label>
+        <input type="text" id="model" placeholder="e.g. gpt-4o-mini" />
+      </div>
+    </div>
+
+    <div class="field checkbox-row">
+      <input type="checkbox" id="quality-critical" />
+      <label for="quality-critical">Quality critical (avoid cost-driven downgrade)</label>
+    </div>
+
+    <div class="field">
+      <label for="system-prompt">System prompt (optional)</label>
+      <textarea id="system-prompt" placeholder="You are a helpful assistant."></textarea>
+    </div>
+
+    <div class="field">
+      <label for="user-prompt">Prompt</label>
+      <textarea id="user-prompt" placeholder="Summarize this doc..." required></textarea>
+    </div>
+
+    <button type="submit" id="send">Send request</button>
+  </form>
+
+  <div class="panel result-panel" id="result-panel">
+    <div class="empty-state" id="empty-state">Response will appear here.</div>
+  </div>
+</main>
+
+<script>
+  const form = document.getElementById('form');
+  const sendBtn = document.getElementById('send');
+  const resultPanel = document.getElementById('result-panel');
+  const emptyState = document.getElementById('empty-state');
+
+  const serviceKeySelect = document.getElementById('service-key-select');
+  const serviceKeyCustom = document.getElementById('service-key-custom');
+  serviceKeySelect.addEventListener('change', () => {
+    serviceKeyCustom.style.display = serviceKeySelect.value === '__custom__' ? 'block' : 'none';
+  });
+
+  function escapeHtml(str) {
+    return str.replace(/[&<>"']/g, (c) => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]));
+  }
+
+  function fmtUsd(n) {
+    return '$' + n.toFixed(6);
+  }
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const serviceKey = serviceKeySelect.value === '__custom__'
+      ? serviceKeyCustom.value.trim()
+      : serviceKeySelect.value;
+    const modelTier = document.getElementById('model-tier').value || null;
+    const model = document.getElementById('model').value.trim() || null;
+    const qualityCritical = document.getElementById('quality-critical').checked;
+    const systemPrompt = document.getElementById('system-prompt').value.trim();
+    const userPrompt = document.getElementById('user-prompt').value.trim();
+
+    if (!serviceKey) {
+      alert('Enter a service key.');
+      return;
+    }
+    if (!userPrompt) {
+      alert('Enter a prompt.');
+      return;
+    }
+
+    const messages = [];
+    if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
+    messages.push({ role: 'user', content: userPrompt });
+
+    const body = {
+      service_key: serviceKey,
+      messages,
+      model,
+      model_tier: modelTier,
+      quality_critical: qualityCritical,
+    };
+
+    sendBtn.disabled = true;
+    sendBtn.textContent = 'Sending…';
+    const startedAt = performance.now();
+
+    try {
+      const resp = await fetch('/v1/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const elapsedMs = Math.round(performance.now() - startedAt);
+      const data = await resp.json();
+      renderResult(resp.ok, resp.status, data, elapsedMs);
+    } catch (err) {
+      renderError(String(err));
+    } finally {
+      sendBtn.disabled = false;
+      sendBtn.textContent = 'Send request';
+    }
+  });
+
+  function renderError(message) {
+    emptyState.remove?.();
+    resultPanel.innerHTML = `
+      <div class="status-line">
+        <span class="badge err">NETWORK ERROR</span>
+      </div>
+      <div class="content-box">${escapeHtml(message)}</div>
+    `;
+  }
+
+  function renderResult(ok, status, data, elapsedMs) {
+    if (!ok) {
+      resultPanel.innerHTML = `
+        <div class="status-line">
+          <span class="badge err">HTTP ${status}</span>
+          <span style="color:var(--muted)">${elapsedMs} ms</span>
+        </div>
+        <div class="content-box">${escapeHtml(data.detail ?? JSON.stringify(data))}</div>
+      `;
+      return;
+    }
+
+    const u = data.usage ?? {};
+    resultPanel.innerHTML = `
+      <div class="status-line">
+        <span class="badge ok">HTTP ${status}</span>
+        <span style="color:var(--muted)">${elapsedMs} ms</span>
+        <span style="color:var(--muted)">·</span>
+        <span style="color:var(--muted)">${escapeHtml(data.provider ?? '')} / ${escapeHtml(data.model_used ?? '')}</span>
+        ${data.cache_hit ? '<span class="badge ok">CACHE HIT</span>' : ''}
+        ${data.downgraded_from_tier ? `<span class="badge err">DOWNGRADED FROM ${escapeHtml(data.downgraded_from_tier).toUpperCase()}</span>` : ''}
+      </div>
+      <div class="content-box">${escapeHtml(data.content ?? '')}</div>
+      <div class="stats">
+        <div class="stat"><div class="k">Prompt tokens</div><div class="v">${u.prompt_tokens ?? '—'}</div></div>
+        <div class="stat"><div class="k">Completion tokens</div><div class="v">${u.completion_tokens ?? '—'}</div></div>
+        <div class="stat"><div class="k">Total tokens</div><div class="v">${u.total_tokens ?? '—'}</div></div>
+        <div class="stat"><div class="k">Cost</div><div class="v">${u.cost_usd != null ? fmtUsd(u.cost_usd) : '—'}</div></div>
+      </div>
+      <details>
+        <summary>Raw response</summary>
+        <pre class="raw">${escapeHtml(JSON.stringify(data, null, 2))}</pre>
+      </details>
+    `;
+  }
+</script>
+
+</body>
+</html>
