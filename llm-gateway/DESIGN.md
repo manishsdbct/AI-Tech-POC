@@ -7,6 +7,101 @@ tracking.
 
 ## 1. Architecture
 
+### 1.1 Component diagram
+
+```mermaid
+flowchart LR
+    subgraph Callers["Internal services"]
+        S1["search\n(platform)"]
+        S2["support-bot\n(cx)"]
+        S3["recommender\n(growth)"]
+    end
+
+    subgraph Gateway["LLM Gateway — FastAPI (main.py)"]
+        Auth["auth.py"]
+        RL["rate_limiter.py"]
+        Bud["budgets.py"]
+        Rtr["router.py"]
+        Tok["token_counter.py"]
+        Cch["cache.py"]
+        Prc["pricing.py"]
+        CT["cost_tracker.py"]
+        Obs["observability.py"]
+    end
+
+    subgraph Adapters["providers/*.py"]
+        OA["openai_provider.py"]
+        AA["anthropic_provider.py"]
+    end
+
+    subgraph Stores["Data stores"]
+        Redis[("Redis\n(cache + rate buckets)")]
+        PG[("Postgres\n(teams, services, usage_ledger)")]
+    end
+
+    subgraph LLMs["Provider APIs"]
+        OpenAI["OpenAI API"]
+        Anthropic["Anthropic API"]
+    end
+
+    S1 & S2 & S3 -- "POST /v1/completions" --> Auth
+    Auth --> RL --> Bud --> Rtr
+    Rtr --> Cch
+    Rtr --> Tok --> RL
+    Rtr --> OA & AA
+    OA --> OpenAI
+    AA --> Anthropic
+    Rtr --> Prc --> CT
+
+    Auth -. reads .-> PG
+    Bud -. reads .-> PG
+    CT -. writes/reads .-> PG
+    RL -. buckets .-> Redis
+    Cch -. get/set .-> Redis
+
+    Gateway -. metrics/logs .-> Obs
+```
+
+Every arrow into Redis/Postgres is best-effort: each module tries the real
+store first and falls back to in-process state on any connection failure
+(§1.3's resilience note) — the diagram omits that fallback path for
+readability, but it applies to every dotted line above.
+
+### 1.2 Request flow
+
+```mermaid
+flowchart TD
+    Start(["POST /v1/completions"]) --> Auth{"Valid service_key?"}
+    Auth -- "no" --> R401["401 Unauthorized"]
+    Auth -- "yes → ServiceIdentity" --> ReqRL{"Request rate limit OK?\n(capacity = identity.requests_per_min\nor gateway default)"}
+
+    ReqRL -- "no" --> R429a["429 + Retry-After"]
+    ReqRL -- "yes" --> BudChk{"Team over budget\nand not quality_critical?"}
+
+    BudChk -- "yes" --> R402["402 Payment Required"]
+    BudChk -- "no" --> TierPolicy["Resolve tier:\nidentity.default_model_tier\n→ cap at max_model_tier\n→ downgrade one step if over alert % and not quality_critical"]
+
+    TierPolicy --> Resolve["Resolve concrete model\n(TIER_DEFAULTS / explicit model)"]
+    Resolve --> CacheChk{"Exact-hash cache hit\non (model, messages)?"}
+
+    CacheChk -- "yes" --> Return200a["Return cached\nCompletionResponse"]
+    CacheChk -- "no" --> Estimate["Estimate prompt tokens\n(token_counter.py)"]
+
+    Estimate --> TokRL{"Token rate limit OK?\n(capacity = identity.tokens_per_min\nor gateway default)"}
+    TokRL -- "no" --> R429b["429 + Retry-After"]
+    TokRL -- "yes" --> Call["Call provider adapter for model;\non failure, try next in FALLBACKS chain"]
+
+    Call -- "all candidates failed" --> R502["502 Bad Gateway"]
+    Call -- "success" --> CostCalc["cost_usd = f(model, actual\nprompt/completion tokens)"]
+
+    CostCalc --> Record["Write usage_ledger row,\nupdate team running spend"]
+    Record --> CacheSet["Store response in cache"]
+    CacheSet --> Metrics["Emit Prometheus metrics\n+ structured log"]
+    Metrics --> Return200b["Return CompletionResponse\n(model_used, usage, cost, downgraded_from_tier)"]
+```
+
+### 1.3 Request pipeline (module-level detail)
+
 ```
                        ┌────────────────────────────────────────────────────────┐
                        │                     POST /v1/completions                │
